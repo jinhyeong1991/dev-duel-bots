@@ -4,6 +4,7 @@ const { extractQuestion } = require('./src/mentionHandler');
 const { askGemini } = require('./src/geminiClient');
 const { parseTurn, formatTurnMarker, isDebateKickoff } = require('./src/debate');
 const { parseFileCommand } = require('./src/fileCommand');
+const { buildExportFiles } = require('./src/codeExtractor');
 
 const discordToken = process.env.DISCORD_BOT_TOKEN;
 const geminiApiKey = process.env.GEMINI_API_KEY;
@@ -94,10 +95,10 @@ async function main() {
       await message.channel.sendTyping();
       try {
         const answer = await askGemini({ ai, model, prompt: fileCommandPrompt, systemInstruction });
-        const fileContent = `# ${fileCommandPrompt}\n\n${answer || '(빈 응답)'}\n`;
+        const exportFiles = buildExportFiles(answer || '(빈 응답)');
         await message.reply({
-          content: '📎 결과를 파일로 만들었어.',
-          files: [{ attachment: Buffer.from(fileContent, 'utf8'), name: 'result.md' }],
+          content: `📎 결과를 파일로 만들었어. (${exportFiles.length}개)`,
+          files: exportFiles.map((f) => ({ attachment: Buffer.from(f.content, 'utf8'), name: f.name })),
         });
       } catch (err) {
         console.error('Gemini error:', err);
