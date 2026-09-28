@@ -1,0 +1,23 @@
+name: Daily Naver News to Discord
+
+on:
+  schedule:
+    # 08:00 KST = 23:00 UTC (previous day)
+    - cron: '0 23 * * *'
+  workflow_dispatch: {}
+
+jobs:
+  post-news:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: news-bot
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npm install
+      - run: node index.js
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}

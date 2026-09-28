@@ -1,0 +1,15 @@
+{
+  "name": "naver-news-bot",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Fetches Naver's top ranked news and posts them to Discord via webhook, run daily by GitHub Actions",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "cheerio": "^1.0.0",
+    "iconv-lite": "^0.6.3"
+  }
+}
