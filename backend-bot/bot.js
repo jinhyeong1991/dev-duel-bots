@@ -3,6 +3,7 @@ const { Client, GatewayIntentBits, Partials } = require('discord.js');
 const { extractQuestion } = require('./src/mentionHandler');
 const { askGemini } = require('./src/geminiClient');
 const { parseTurn, formatTurnMarker, isDebateKickoff } = require('./src/debate');
+const { parseFileCommand } = require('./src/fileCommand');
 
 const discordToken = process.env.DISCORD_BOT_TOKEN;
 const geminiApiKey = process.env.GEMINI_API_KEY;
@@ -87,6 +88,23 @@ async function main() {
 
     if (!question) {
       await message.reply('불렀냐. 뭐가 문제인지 스펙부터 말해봐.');
+      return;
+    }
+
+    const fileCommandPrompt = parseFileCommand(question);
+    if (fileCommandPrompt !== null) {
+      await message.channel.sendTyping();
+      try {
+        const answer = await askGemini({ ai, model, prompt: fileCommandPrompt, systemInstruction });
+        const fileContent = `# ${fileCommandPrompt}\n\n${answer || '(빈 응답)'}\n`;
+        await message.reply({
+          content: '📎 결과를 파일로 만들었어.',
+          files: [{ attachment: Buffer.from(fileContent, 'utf8'), name: 'result.md' }],
+        });
+      } catch (err) {
+        console.error('Gemini error:', err);
+        await message.reply(`❌ 오류가 발생했습니다: ${err.message}`);
+      }
       return;
     }
 
