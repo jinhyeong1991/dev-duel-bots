@@ -1,25 +1,28 @@
 require('dotenv').config();
 const { Client, GatewayIntentBits, Partials } = require('discord.js');
+const Anthropic = require('@anthropic-ai/sdk');
 const { extractQuestion } = require('./src/mentionHandler');
-const { askGemini, askGeminiImages } = require('./src/geminiClient');
+const { askClaude } = require('./src/claudeClient');
+const { askGeminiImages } = require('./src/geminiClient');
 const { parseTurn, formatTurnMarker, isDebateKickoff } = require('./src/debate');
 const { parseFileCommand } = require('./src/fileCommand');
 const { parseImageCommand } = require('./src/imageCommand');
 const { extractCodeBlocks, buildExportFiles } = require('./src/codeExtractor');
 
 const discordToken = process.env.DISCORD_BOT_TOKEN;
+const anthropicApiKey = process.env.ANTHROPIC_API_KEY;
 const geminiApiKey = process.env.GEMINI_API_KEY;
-const model = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
+const model = process.env.ANTHROPIC_MODEL || 'claude-sonnet-5';
 const imageModel = process.env.GEMINI_IMAGE_MODEL || 'gemini-2.5-flash-image';
 const partnerBotId = process.env.PARTNER_BOT_ID || null;
 const debateMaxTurns = parseInt(process.env.DEBATE_MAX_TURNS || '6', 10);
 
-if (!discordToken || !geminiApiKey) {
-  console.error('DISCORD_BOT_TOKEN and GEMINI_API_KEY must be set in .env');
+if (!discordToken || !anthropicApiKey) {
+  console.error('DISCORD_BOT_TOKEN and ANTHROPIC_API_KEY must be set in .env');
   process.exit(1);
 }
 
-const systemInstruction = process.env.GEMINI_SYSTEM_INSTRUCTION ||
+const systemInstruction = process.env.SYSTEM_INSTRUCTION ||
   "너는 백엔드를 맡고 있는 20대 후반의 개발자 '로드'야. 아직 완벽하지 않고 한창 배우는 중인, " +
   '살짝 어리바리하지만 성실한 느낌이야. 성능/DB/API 보안에 관심은 많지만 가끔 실수도 하고, ' +
   '어려운 전문 용어보다는 쉽고 편한 말투로 설명해줘. 딱딱하게 굴지 말고 친근하게, 농담을 받아치거나 ' +
@@ -31,9 +34,15 @@ function stripAllMentions(content, ids) {
 }
 
 async function main() {
+  const anthropic = new Anthropic({ apiKey: anthropicApiKey });
+
   // @google/genai ships ESM-only; CommonJS require() can't load its Node build.
-  const { GoogleGenAI } = await import('@google/genai');
-  const ai = new GoogleGenAI({ apiKey: geminiApiKey });
+  // Used only for the /그림 image-generation command — text replies go through Claude.
+  let geminiAi = null;
+  if (geminiApiKey) {
+    const { GoogleGenAI } = await import('@google/genai');
+    geminiAi = new GoogleGenAI({ apiKey: geminiApiKey });
+  }
 
   const client = new Client({
     intents: [
@@ -51,7 +60,7 @@ async function main() {
   async function replyInDebate(message, question, turn) {
     await message.channel.sendTyping();
     try {
-      const answer = await askGemini({ ai, model, prompt: question, systemInstruction });
+      const answer = await askClaude({ anthropic, model, prompt: question, systemInstruction });
       const isFinal = turn >= debateMaxTurns;
       let text = answer || '(빈 응답)';
       text = isFinal
@@ -59,7 +68,7 @@ async function main() {
         : `${text}\n\n<@${partnerBotId}> ${formatTurnMarker(turn, debateMaxTurns)}`;
       await message.reply(text.length > 2000 ? `${text.slice(0, 1990)}…` : text);
     } catch (err) {
-      console.error('Gemini error:', err);
+      console.error('Claude error:', err);
       await message.reply(`❌ 오류가 발생했습니다: ${err.message}`);
     }
   }
@@ -97,9 +106,13 @@ async function main() {
 
     const imageCommandPrompt = parseImageCommand(question);
     if (imageCommandPrompt !== null) {
+      if (!geminiAi) {
+        await message.reply('이미지 생성은 GEMINI_API_KEY가 설정돼 있어야 돼.');
+        return;
+      }
       await message.channel.sendTyping();
       try {
-        const images = await askGeminiImages({ ai, model: imageModel, prompt: imageCommandPrompt });
+        const images = await askGeminiImages({ ai: geminiAi, model: imageModel, prompt: imageCommandPrompt });
         if (images.length === 0) {
           await message.reply('이미지를 만들지 못했어. 다른 설명으로 다시 시도해봐.');
           return;
@@ -122,14 +135,14 @@ async function main() {
     if (fileCommandPrompt !== null) {
       await message.channel.sendTyping();
       try {
-        const answer = await askGemini({ ai, model, prompt: fileCommandPrompt, systemInstruction });
+        const answer = await askClaude({ anthropic, model, prompt: fileCommandPrompt, systemInstruction });
         const exportFiles = buildExportFiles(answer || '(빈 응답)');
         await message.reply({
           content: `📎 결과를 파일로 만들었어. (${exportFiles.length}개)`,
           files: exportFiles.map((f) => ({ attachment: Buffer.from(f.content, 'utf8'), name: f.name })),
         });
       } catch (err) {
-        console.error('Gemini error:', err);
+        console.error('Claude error:', err);
         await message.reply(`❌ 오류가 발생했습니다: ${err.message}`);
       }
       return;
@@ -137,7 +150,7 @@ async function main() {
 
     await message.channel.sendTyping();
     try {
-      const answer = await askGemini({ ai, model, prompt: question, systemInstruction });
+      const answer = await askClaude({ anthropic, model, prompt: question, systemInstruction });
       const text = answer || '(빈 응답)';
       if (extractCodeBlocks(text).length > 0) {
         const exportFiles = buildExportFiles(text);
@@ -149,7 +162,7 @@ async function main() {
       }
       await message.reply(text.length > 2000 ? `${text.slice(0, 1990)}…` : text);
     } catch (err) {
-      console.error('Gemini error:', err);
+      console.error('Claude error:', err);
       await message.reply(`❌ 오류가 발생했습니다: ${err.message}`);
     }
   });
