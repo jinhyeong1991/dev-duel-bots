@@ -5,7 +5,7 @@ const { askGemini, askGeminiImages } = require('./src/geminiClient');
 const { parseTurn, formatTurnMarker, isDebateKickoff } = require('./src/debate');
 const { parseFileCommand } = require('./src/fileCommand');
 const { parseImageCommand } = require('./src/imageCommand');
-const { buildExportFiles } = require('./src/codeExtractor');
+const { extractCodeBlocks, buildExportFiles } = require('./src/codeExtractor');
 
 const discordToken = process.env.DISCORD_BOT_TOKEN;
 const geminiApiKey = process.env.GEMINI_API_KEY;
@@ -136,6 +136,14 @@ async function main() {
     try {
       const answer = await askGemini({ ai, model, prompt: question, systemInstruction });
       const text = answer || '(빈 응답)';
+      if (extractCodeBlocks(text).length > 0) {
+        const exportFiles = buildExportFiles(text);
+        await message.reply({
+          content: '📎 코드가 있어서 파일로 보냈어.',
+          files: exportFiles.map((f) => ({ attachment: Buffer.from(f.content, 'utf8'), name: f.name })),
+        });
+        return;
+      }
       await message.reply(text.length > 2000 ? `${text.slice(0, 1990)}…` : text);
     } catch (err) {
       console.error('Gemini error:', err);
