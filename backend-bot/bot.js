@@ -1,14 +1,16 @@
 require('dotenv').config();
 const { Client, GatewayIntentBits, Partials } = require('discord.js');
 const { extractQuestion } = require('./src/mentionHandler');
-const { askGemini } = require('./src/geminiClient');
+const { askGemini, askGeminiImages } = require('./src/geminiClient');
 const { parseTurn, formatTurnMarker, isDebateKickoff } = require('./src/debate');
 const { parseFileCommand } = require('./src/fileCommand');
+const { parseImageCommand } = require('./src/imageCommand');
 const { buildExportFiles } = require('./src/codeExtractor');
 
 const discordToken = process.env.DISCORD_BOT_TOKEN;
 const geminiApiKey = process.env.GEMINI_API_KEY;
 const model = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
+const imageModel = process.env.GEMINI_IMAGE_MODEL || 'gemini-2.5-flash-image';
 const partnerBotId = process.env.PARTNER_BOT_ID || null;
 const debateMaxTurns = parseInt(process.env.DEBATE_MAX_TURNS || '6', 10);
 
@@ -89,6 +91,29 @@ async function main() {
 
     if (!question) {
       await message.reply('불렀냐. 뭐가 문제인지 스펙부터 말해봐.');
+      return;
+    }
+
+    const imageCommandPrompt = parseImageCommand(question);
+    if (imageCommandPrompt !== null) {
+      await message.channel.sendTyping();
+      try {
+        const images = await askGeminiImages({ ai, model: imageModel, prompt: imageCommandPrompt });
+        if (images.length === 0) {
+          await message.reply('이미지를 만들지 못했어. 다른 설명으로 다시 시도해봐.');
+          return;
+        }
+        await message.reply({
+          content: `🎨 그렸어. (${images.length}개)`,
+          files: images.map((img, i) => ({
+            attachment: img.data,
+            name: `image-${i + 1}.${img.mimeType.split('/')[1] || 'png'}`,
+          })),
+        });
+      } catch (err) {
+        console.error('Gemini image error:', err);
+        await message.reply(`❌ 오류가 발생했습니다: ${err.message}`);
+      }
       return;
     }
 

@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { askGemini } = require('../src/geminiClient');
+const { askGemini, askGeminiImages } = require('../src/geminiClient');
 
 test('returns the response text from the model', async () => {
   const ai = {
@@ -114,4 +114,71 @@ test('gives up and throws the last 503 error after exhausting retries', async ()
     /503/,
   );
   assert.equal(calls, 3);
+});
+
+test('askGeminiImages extracts inline image data from the response parts', async () => {
+  const pngBytes = Buffer.from('fake-png-bytes').toString('base64');
+  const ai = {
+    models: {
+      generateContent: async ({ model, contents }) => {
+        assert.equal(model, 'gemini-2.5-flash-image');
+        assert.equal(contents, '빨간 원');
+        return {
+          candidates: [
+            {
+              content: {
+                parts: [
+                  { text: '여기 있어' },
+                  { inlineData: { mimeType: 'image/png', data: pngBytes } },
+                ],
+              },
+            },
+          ],
+        };
+      },
+    },
+  };
+
+  const images = await askGeminiImages({ ai, model: 'gemini-2.5-flash-image', prompt: '빨간 원' });
+
+  assert.equal(images.length, 1);
+  assert.equal(images[0].mimeType, 'image/png');
+  assert.deepEqual(images[0].data, Buffer.from('fake-png-bytes'));
+});
+
+test('askGeminiImages returns an empty array when the response has no image parts', async () => {
+  const ai = {
+    models: {
+      generateContent: async () => ({ candidates: [{ content: { parts: [{ text: '이미지 없음' }] } }] }),
+    },
+  };
+
+  const images = await askGeminiImages({ ai, model: 'gemini-2.5-flash-image', prompt: 'x' });
+
+  assert.deepEqual(images, []);
+});
+
+test('askGeminiImages retries on a 503 error like askGemini', async () => {
+  let calls = 0;
+  const pngBytes = Buffer.from('ok').toString('base64');
+  const ai = {
+    models: {
+      generateContent: async () => {
+        calls += 1;
+        if (calls < 2) throw new Error('got status: 503 Service Unavailable. {"error":{"status":"UNAVAILABLE"}}');
+        return { candidates: [{ content: { parts: [{ inlineData: { mimeType: 'image/png', data: pngBytes } }] } }] };
+      },
+    },
+  };
+
+  const images = await askGeminiImages({
+    ai,
+    model: 'gemini-2.5-flash-image',
+    prompt: 'x',
+    retries: 2,
+    sleepFn: async () => {},
+  });
+
+  assert.equal(calls, 2);
+  assert.equal(images.length, 1);
 });
