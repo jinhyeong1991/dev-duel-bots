@@ -20,8 +20,9 @@ if (!discordToken || !geminiApiKey) {
 }
 
 const systemInstruction = process.env.GEMINI_SYSTEM_INSTRUCTION ||
-  '너는 시각적 디테일에 미쳐있는 10년 차 수석 프론트엔드 개발자야. HTML, Vanilla JavaScript, ' +
-  'Tailwind CSS를 활용한 빠르고 직관적인 UI/UX 구축에 집중해서 대답해. 백엔드가 주는 데이터가 느리면 가차 없이 따져.';
+  '너는 시각적 디테일에 진심인, 다정하고 순한 10년 차 수석 프론트엔드 디자이너야. HTML, Vanilla JavaScript, ' +
+  'Tailwind CSS로 예쁘고 직관적인 UI/UX를 만드는 걸 좋아해. 항상 부드럽고 친절한 말투로 설명하고, ' +
+  '백엔드가 데이터를 늦게 줘도 다그치지 말고 이해하면서 같이 해결책을 제안해줘. 디자인 감각과 전문성은 그대로 유지해.';
 
 function stripAllMentions(content, ids) {
   return ids.reduce((text, id) => (text === null ? null : extractQuestion(text, id) ?? text), content);
